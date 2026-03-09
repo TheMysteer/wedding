@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wedding DJ</title>
+  <!-- Favicon com ícone de música -->
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75' dominant-baseline='middle'>🎵</text></svg>">
+  <!-- Versão offline: sem Google Fonts, usa fontes do sistema -->
+  <link rel="stylesheet" href="style.css">
+  <style>
+    :root {
+      --font-d: Georgia, 'Times New Roman', serif;
+      --font-u: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── HEADER ── -->
+  <header class="header">
+    <div class="logo">
+      <span class="logo-title">Wedding <em>DJ</em></span>
+      <span class="logo-sub">Painel de Músicas</span>
+    </div>
+    <div class="header-right">
+      <span class="kbd-hint">Espaço = Play/Pause &nbsp;·&nbsp; Alt+← / Alt+→ = Anterior/Próxima</span>
+      <button class="btn-icon-round" id="btnTheme" title="Alternar tema">🌙</button>
+    </div>
+  </header>
+
+  <!-- ── PAINÉIS ── -->
+  <main class="main">
+
+    <!-- PAINEL: ENTRADA & SAÍDA -->
+    <div class="panel" id="panelEntrada">
+      <div class="panel-header">
+
+        <div class="panel-title-row">
+          <span class="panel-emoji">🎊</span>
+          <span class="panel-title">Entrada &amp; Saída</span>
+          <span class="panel-badge" id="badgeEntrada">0 músicas</span>
+        </div>
+
+        <div class="panel-actions">
+          <button class="btn primary" id="btnActivateEntrada">▶ Ativar</button>
+          <label class="file-btn">
+            ＋ Arquivos
+            <input type="file" multiple accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac,.opus,.wma,.mpeg,.mpg,.mp2" id="fileEntrada">
+          </label>
+          <label class="file-btn">
+            📁 Pasta
+            <input type="file" id="folderEntrada" webkitdirectory multiple>
+          </label>
+          <button class="btn danger" id="btnClearEntrada">🗑 Limpar</button>
+        </div>
+
+        <div class="panel-settings">
+          <span class="settings-label">Ao terminar:</span>
+          <button class="pbtn" id="ps-entrada-autonext"  data-pl="entrada" data-key="autoNext"  title="Toca a próxima música automaticamente quando a atual terminar">⏭ Próxima auto</button>
+          <button class="pbtn" id="ps-entrada-shuffle"   data-pl="entrada" data-key="shuffle"   title="Escolhe a próxima música de forma aleatória">⇄ Aleatório</button>
+          <button class="pbtn" id="ps-entrada-repeat"    data-pl="entrada" data-key="repeat"    title="Quando chegar na última música, volta para a primeira">↻ Repetir tudo</button>
+          <button class="pbtn" id="ps-entrada-repeatone" data-pl="entrada" data-key="repeatOne" title="Fica repetindo a mesma música indefinidamente">↺ Repetir uma</button>
+        </div>
+
+      </div>
+      <div class="track-list" id="listEntrada">
+        <div class="empty-state">
+          <span class="empty-icon">🎊</span>
+          Nenhuma música adicionada.<br>
+          Use <b>＋ Arquivos</b> para selecionar arquivos<br>
+          ou <b>📁 Pasta</b> para carregar uma pasta inteira.
+        </div>
+      </div>
+    </div>
+
+    <!-- PAINEL: FUNDO -->
+    <div class="panel" id="panelFundo">
+      <div class="panel-header">
+
+        <div class="panel-title-row">
+          <span class="panel-emoji">🎶</span>
+          <span class="panel-title">Músicas de Fundo</span>
+          <span class="panel-badge" id="badgeFundo">0 músicas</span>
+        </div>
+
+        <div class="panel-actions">
+          <button class="btn primary" id="btnActivateFundo">▶ Ativar</button>
+          <label class="file-btn">
+            ＋ Arquivos
+            <input type="file" multiple accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac,.flac,.opus,.wma,.mpeg,.mpg,.mp2" id="fileFundo">
+          </label>
+          <label class="file-btn">
+            📁 Pasta
+            <input type="file" id="folderFundo" webkitdirectory multiple>
+          </label>
+          <button class="btn danger" id="btnClearFundo">🗑 Limpar</button>
+        </div>
+
+        <div class="panel-settings">
+          <span class="settings-label">Ao terminar:</span>
+          <button class="pbtn" id="ps-fundo-autonext"  data-pl="fundo" data-key="autoNext"  title="Toca a próxima música automaticamente quando a atual terminar">⏭ Próxima auto</button>
+          <button class="pbtn" id="ps-fundo-shuffle"   data-pl="fundo" data-key="shuffle"   title="Escolhe a próxima música de forma aleatória">⇄ Aleatório</button>
+          <button class="pbtn" id="ps-fundo-repeat"    data-pl="fundo" data-key="repeat"    title="Quando chegar na última música, volta para a primeira">↻ Repetir tudo</button>
+          <button class="pbtn" id="ps-fundo-repeatone" data-pl="fundo" data-key="repeatOne" title="Fica repetindo a mesma música indefinidamente">↺ Repetir uma</button>
+        </div>
+
+      </div>
+      <div class="track-list" id="listFundo">
+        <div class="empty-state">
+          <span class="empty-icon">🎶</span>
+          Nenhuma música adicionada.<br>
+          Use <b>＋ Arquivos</b> para selecionar arquivos<br>
+          ou <b>📁 Pasta</b> para carregar uma pasta inteira.
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ── PLAYER FIXO ── -->
+  <div class="player" id="player">
+
+    <div class="player-now">
+      <div class="now-info">
+        <div class="now-name" id="nowName"><em>Nenhuma música selecionada</em></div>
+        <div class="now-source" id="nowSource">Escolha uma playlist e clique em <b>Ativar</b></div>
+      </div>
+    </div>
+
+    <div class="progress-row">
+      <span class="ptime" id="timeNow">0:00</span>
+      <div class="progress-wrap">
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+          <div class="progress-thumb" id="progressThumb"></div>
+          <input type="range" id="progressInput" min="0" max="1000" value="0" step="1">
+        </div>
+      </div>
+      <span class="ptime end" id="timeTotal">0:00</span>
+    </div>
+
+    <div class="player-controls-row">
+      <!-- botão entrada + repetidores -->
+      <div class="ctrl-left">
+        <button class="cbtn" id="btnEntrada" title="Ativar Entrada & Saída">🎊</button>
+        <button class="cbtn" id="btnRepeat" title="Repetir tudo">↻</button>
+        <button class="cbtn" id="btnRepeatOne" title="Repetir faixa">↺</button>
+      </div>
+
+      <!-- wrapper que mantém o grupo centralizado -->
+      <div class="ctrl-center">
+        <div class="ctrl-group">
+          <button class="cbtn" id="btnPrev" title="Anterior (Alt+←)">⏮</button>
+          <button class="cbtn-main" id="btnPlay" title="Play / Pause (Espaço)">▶</button>
+          <button class="cbtn" id="btnNext" title="Próxima (Alt+→)">⏭</button>
+        </div>
+      </div>
+
+      <!-- botão fundo no lado direito -->
+      <div class="ctrl-right">
+        <button class="cbtn" id="btnFundo" title="Ativar Fundo">🎶</button>
+      </div>
+
+      <div class="vol-group">
+        <span class="vol-icon">🔊</span>
+        <input class="vol-slider" type="range" id="volSlider" min="0" max="100" value="85">
+      </div>
+    </div>
+
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>
