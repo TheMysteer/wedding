@@ -27,11 +27,11 @@
   --red:          #b85c4a;
   --green:        #5a9e6f;
 
-  /* Player (always dark) */
-  --player-bg:    #19160f;
-  --player-top:   #211d14;
-  --player-text:  #f5f0e6;
-  --player-muted: #7a6a50;
+  /* Player (always dark, now true black) */
+  --player-bg:    #000000;
+  --player-top:   #111111;
+  --player-text:  #ffffff;
+  --player-muted: #888888;
 
   --shadow-sm:    0 1px 6px rgba(30, 26, 20, 0.06);
   --shadow:       0 3px 20px rgba(30, 26, 20, 0.08);
@@ -42,15 +42,23 @@
 }
 
 [data-theme="dark"] {
-  --bg:           #131109;
-  --bg-2:         #1c1913;
-  --bg-3:         #26221a;
-  --border:       rgba(201, 169, 110, 0.11);
-  --text:         #f0ece2;
-  --text-2:       #9a8870;
-  --text-3:       #5a5040;
-  --shadow-sm:    0 1px 6px rgba(0, 0, 0, 0.3);
-  --shadow:       0 3px 20px rgba(0, 0, 0, 0.35);
+  /* minimal black & white palette for dark mode */
+  --bg:           #000000;
+  --bg-2:         #111111;
+  --bg-3:         #222222;
+  --border:       rgba(255, 255, 255, 0.05);
+  --text:         #ffffff;
+  --text-2:       #cccccc;
+  --text-3:       #888888;
+
+  /* accent is white in strict black/white style, with a faint glow/dim for
+     hover/active states */
+  --accent:       #ffffff;
+  --accent-dim:   rgba(255, 255, 255, 0.1);
+  --accent-glow:  rgba(255, 255, 255, 0.2);
+
+  --shadow-sm:    0 1px 6px rgba(0, 0, 0, 0.4);
+  --shadow:       0 3px 20px rgba(0, 0, 0, 0.5);
 }
 
 /* ── BASE ── */

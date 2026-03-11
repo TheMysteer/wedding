@@ -162,6 +162,8 @@ function bindPlayerControls() {
   document.getElementById('btnPrev').addEventListener('click', prevTrack);
   document.getElementById('btnNext').addEventListener('click', () => nextTrack(true));
   document.getElementById('btnTheme').addEventListener('click', toggleTheme);
+  document.getElementById('btnZoomIn').addEventListener('click', increaseZoom);
+  document.getElementById('btnZoomOut').addEventListener('click', decreaseZoom);
 
   // novos controles junto ao player
   document.getElementById('btnEntrada').addEventListener('click', () => activatePlaylist('entrada'));
@@ -182,8 +184,14 @@ function bindPlayerControls() {
     if (audio.duration && isFinite(audio.duration))
       audio.currentTime = (pi.value / 1000) * audio.duration;
   });
-  pi.addEventListener('mouseup',  () => { state.seeking = false; });
-  pi.addEventListener('touchend', () => { state.seeking = false; });
+  pi.addEventListener('mouseup',  () => { 
+    state.seeking = false;
+    if (state.playing && audio.paused) audio.play().catch(() => {});
+  });
+  pi.addEventListener('touchend', () => { 
+    state.seeking = false;
+    if (state.playing && audio.paused) audio.play().catch(() => {});
+  });
 
   // Volume
   document.getElementById('volSlider').addEventListener('input', e => {
@@ -458,8 +466,11 @@ function toggleTrackRepeat(pl, i) {
 }
 
 function activatePlaylist(pl) {
-  state.active = pl;
-  updatePanelHighlight();
+  // do not set state.active here – playTrack will handle the switch and avoid
+  // confusing "isSameTrack" checks when both playlists happen to have a track
+  // at the same index. previously we updated active before calling playTrack,
+  // causing a false positive and the source URL would not change, so the audio
+  // kept playing the last playlist.
 
   const tracks = state.playlists[pl];
   if (!tracks.length) { showToast('Adicione músicas antes de ativar.'); return; }
@@ -718,15 +729,37 @@ audio.addEventListener('error', () => {
 });
 
 // ──────────────────────────────────────────────
-//  TEMA
+//  TEMA & ZOOM
 // ──────────────────────────────────────────────
 let darkMode = true;
+let zoomLevel = 1; // 1.0 = normal, can range e.g. 0.5–2.0
+
+function applyZoom() {
+  // zoom property has decent support and scales everything including px
+  document.body.style.zoom = zoomLevel;
+  localStorage.setItem('zoom', zoomLevel);
+}
+function increaseZoom() {
+  zoomLevel = Math.min(2, zoomLevel + 0.1);
+  applyZoom();
+  showToast(`Zoom: ${Math.round(zoomLevel * 100)}%`);
+}
+function decreaseZoom() {
+  zoomLevel = Math.max(0.5, zoomLevel - 0.1);
+  applyZoom();
+  showToast(`Zoom: ${Math.round(zoomLevel * 100)}%`);
+}
 
 /* start in dark mode by default */
 document.addEventListener('DOMContentLoaded', () => {
   document.documentElement.setAttribute('data-theme', 'dark');
   const btn = document.getElementById('btnTheme');
   if (btn) btn.textContent = '☀️';
+
+  // restore zoom preference
+  const storedZ = parseFloat(localStorage.getItem('zoom'));
+  if (!isNaN(storedZ)) zoomLevel = storedZ;
+  applyZoom();
 });
 function toggleTheme() {
   darkMode = !darkMode;
