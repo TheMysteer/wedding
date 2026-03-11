@@ -159,7 +159,8 @@ function bindFileInputs() {
 // ──────────────────────────────────────────────
 function bindPlayerControls() {
   document.getElementById('btnPlay').addEventListener('click', togglePlay);
-  document.getElementById('btnPrev').addEventListener('click', prevTrack);
+  // always force previous when user clicks button, ignore 3s restart rule
+  document.getElementById('btnPrev').addEventListener('click', () => prevTrack(true));
   document.getElementById('btnNext').addEventListener('click', () => nextTrack(true));
   document.getElementById('btnTheme').addEventListener('click', toggleTheme);
   document.getElementById('btnZoomIn').addEventListener('click', increaseZoom);
@@ -560,12 +561,12 @@ function nextTrack(forced = false) {
   playTrack(state.active, next);
 }
 
-function prevTrack() {
+function prevTrack(force = false) {
   const tracks = state.playlists[state.active];
   if (!tracks.length) return;
 
-  // Se passou mais de 3s, reinicia a atual
-  if (audio.currentTime > 3) {
+  // if not forced and more than 3s into current track, restart it
+  if (!force && audio.currentTime > 3) {
     audio.currentTime = 0;
     return;
   }
