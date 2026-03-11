@@ -178,19 +178,36 @@ function bindPlayerControls() {
 
   // Barra de progresso
   const pi = document.getElementById('progressInput');
-  pi.addEventListener('mousedown',  () => { state.seeking = true; });
-  pi.addEventListener('touchstart', () => { state.seeking = true; }, { passive: true });
-  pi.addEventListener('input', () => {
-    if (audio.duration && isFinite(audio.duration))
-      audio.currentTime = (pi.value / 1000) * audio.duration;
+  let wasPlayingBeforeSeek = false;
+  
+  pi.addEventListener('mousedown',  () => { 
+    state.seeking = true;
+    wasPlayingBeforeSeek = state.playing;
+    if (state.playing) audio.pause();
   });
+  pi.addEventListener('touchstart', () => { 
+    state.seeking = true;
+    wasPlayingBeforeSeek = state.playing;
+    if (state.playing) audio.pause();
+  }, { passive: true });
+  
+  pi.addEventListener('input', () => {
+    if (audio.duration && isFinite(audio.duration)) {
+      audio.currentTime = (pi.value / 1000) * audio.duration;
+    }
+    // Update UI immediately while dragging/seeking, even when paused
+    updateProgressUI();
+  });
+  
   pi.addEventListener('mouseup',  () => { 
     state.seeking = false;
-    if (state.playing && audio.paused) audio.play().catch(() => {});
+    updateProgressUI(); // ensure UI is updated
+    if (wasPlayingBeforeSeek && audio.paused) audio.play().catch(() => {});
   });
   pi.addEventListener('touchend', () => { 
     state.seeking = false;
-    if (state.playing && audio.paused) audio.play().catch(() => {});
+    updateProgressUI(); // ensure UI is updated
+    if (wasPlayingBeforeSeek && audio.paused) audio.play().catch(() => {});
   });
 
   // Volume
@@ -271,8 +288,10 @@ function showSettingsToast(pl, key, on) {
 // ──────────────────────────────────────────────
 function bindKeyboard() {
   document.addEventListener('keydown', e => {
-    const tag = document.activeElement.tagName;
-    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    const active = document.activeElement;
+    const tag = active.tagName;
+    // ignore typing fields, but allow space when focus is on the progress slider
+    if ((tag === 'INPUT' && active.id !== 'progressInput' && active.id !== 'volSlider') || tag === 'TEXTAREA') return;
 
     if (e.code === 'Space') {
       e.preventDefault();
@@ -708,13 +727,8 @@ audio.addEventListener('loadedmetadata', () => {
 });
 
 audio.addEventListener('timeupdate', () => {
-  if (state.seeking || !audio.duration || !isFinite(audio.duration)) return;
-  const pct = audio.currentTime / audio.duration;
-
-  document.getElementById('progressFill').style.width = (pct * 100).toFixed(2) + '%';
-  document.getElementById('progressThumb').style.left = (pct * 100).toFixed(2) + '%';
-  document.getElementById('progressInput').value      = Math.round(pct * 1000);
-  document.getElementById('timeNow').textContent      = fmtTime(audio.currentTime);
+  if (!audio.duration || !isFinite(audio.duration)) return;
+  updateProgressUI();
 });
 
 audio.addEventListener('error', () => {
@@ -770,6 +784,16 @@ function toggleTheme() {
 // ──────────────────────────────────────────────
 //  ATUALIZAR UI DO PLAYER
 // ──────────────────────────────────────────────
+function updateProgressUI() {
+  if (!audio.duration || !isFinite(audio.duration)) return;
+  const pct = audio.currentTime / audio.duration;
+  
+  document.getElementById('progressFill').style.width = (pct * 100).toFixed(2) + '%';
+  document.getElementById('progressThumb').style.left = (pct * 100).toFixed(2) + '%';
+  document.getElementById('progressInput').value      = Math.round(pct * 1000);
+  document.getElementById('timeNow').textContent      = fmtTime(audio.currentTime);
+}
+
 function updatePlayerUI() {
   const track   = state.playlists[state.active][state.idx];
   const nameEl  = document.getElementById('nowName');
