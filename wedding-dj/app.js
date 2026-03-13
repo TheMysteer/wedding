@@ -12,7 +12,7 @@ const state = {
   // Faixas de cada playlist: [{ name, url, dur, id }]
   playlists: {
     entrada: [],
-    fundo:   [],
+    fundo: [],
   },
 
   // Configurações independentes de cada painel
@@ -22,11 +22,11 @@ const state = {
   // repeatOne → fica repetindo a mesma música
   settings: {
     entrada: { autoNext: false, shuffle: false, repeat: false, repeatOne: false },
-    fundo:   { autoNext: false, shuffle: false, repeat: false, repeatOne: false },
+    fundo: { autoNext: false, shuffle: false, repeat: false, repeatOne: false },
   },
 
-  active:  'entrada', // painel/playlist atualmente no player
-  idx:     -1,        // índice da faixa atual
+  active: 'entrada', // painel/playlist atualmente no player
+  idx: -1,        // índice da faixa atual
   playing: false,
   seeking: false,
 };
@@ -39,10 +39,95 @@ audio.volume = 0.85;
 audio.preload = 'metadata';
 
 // ──────────────────────────────────────────────
+//  WEB AUDIO API — DETECÇÃO DE SILÊNCIO
+// ──────────────────────────────────────────────
+// Inicializado no primeiro interact (gesture), pois AudioContext requer isso.
+let audioCtx = null;
+let analyser = null;
+let audioSource = null; // MediaElementSource (criado apenas 1x)
+
+// Estado da detecção de silêncio
+const silence = {
+  silentSince: null,   // timestamp (ms) de quando o silêncio começou
+  triggered: false,  // se já mandou nextTrack() para esta faixa
+  THRESHOLD: 0.015,  // volume RMS abaixo disso = silêncio (0–1 escala)
+  MIN_DURATION: 200,   // ms de silêncio contínuo antes de trocar
+  TAIL_FRACTION: 0.70,   // só monitora a partir deste % da música (ex: 70%)
+  MIN_ABS_REMAIN: 8,    // não monitora se restar mais de N segundos (segurança)
+};
+
+function initAudioContext() {
+  if (audioCtx) return;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 256;
+  analyser.smoothingTimeConstant = 0.3;
+  // Conecta o <audio> element ao analyser → destination
+  audioSource = audioCtx.createMediaElementSource(audio);
+  audioSource.connect(analyser);
+  analyser.connect(audioCtx.destination);
+}
+
+function getRMS() {
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  let sum = 0;
+  for (let i = 0; i < buf.length; i++) sum += buf[i] * buf[i];
+  return Math.sqrt(sum / buf.length);
+}
+
+function resetSilenceDetection() {
+  silence.silentSince = null;
+  silence.triggered = false;
+}
+
+function checkSilence() {
+  if (!analyser) return;
+  if (!state.playing) return;
+  if (state.seeking) return;
+  if (silence.triggered) return;
+
+  const dur = audio.duration;
+  const cur = audio.currentTime;
+  if (!dur || !isFinite(dur) || dur <= 0) return;
+
+  // Só activa na parte final da música
+  const remaining = dur - cur;
+  const fraction = cur / dur;
+  if (fraction < silence.TAIL_FRACTION && remaining > silence.MIN_ABS_REMAIN) return;
+
+  const cfg = state.settings[state.active];
+  // Só faz algo se autoNext (ou opções equivalentes) estiver ligado
+  if (!cfg.autoNext && !cfg.repeat && !cfg.repeatOne && !cfg.shuffle) return;
+  // repeatOne não precisa de detecção: o evento ended já reinicia
+  if (cfg.repeatOne) return;
+
+  const track = state.playlists[state.active]?.[state.idx];
+  if (track?.repeat) return; // repetição por faixa: deixa o ended cuidar
+
+  const rms = getRMS();
+
+  if (rms < silence.THRESHOLD) {
+    if (silence.silentSince === null) {
+      silence.silentSince = performance.now();
+    } else {
+      const elapsed = performance.now() - silence.silentSince;
+      if (elapsed >= silence.MIN_DURATION) {
+        silence.triggered = true;
+        nextTrack(false);
+      }
+    }
+  } else {
+    // Som detectado: reseta contador
+    silence.silentSince = null;
+  }
+}
+
+// ──────────────────────────────────────────────
 //  BANCO DE DADOS PARA CACHE OFFLINE
 // ──────────────────────────────────────────────
 const DB_NAME = 'weddingdj';
-const STORE   = 'tracks';
+const STORE = 'tracks';
 function openDB() {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, 1);
@@ -141,10 +226,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ──────────────────────────────────────────────
 function bindFileInputs() {
   const pairs = [
-    ['fileEntrada',   'entrada'],
-    ['fileFundo',     'fundo'],
+    ['fileEntrada', 'entrada'],
+    ['fileFundo', 'fundo'],
     ['folderEntrada', 'entrada'],
-    ['folderFundo',   'fundo'],
+    ['folderFundo', 'fundo'],
   ];
   pairs.forEach(([id, pl]) => {
     document.getElementById(id).addEventListener('change', e => {
@@ -180,18 +265,18 @@ function bindPlayerControls() {
   // Barra de progresso
   const pi = document.getElementById('progressInput');
   let wasPlayingBeforeSeek = false;
-  
-  pi.addEventListener('mousedown',  () => { 
+
+  pi.addEventListener('mousedown', () => {
     state.seeking = true;
     wasPlayingBeforeSeek = state.playing;
     if (state.playing) audio.pause();
   });
-  pi.addEventListener('touchstart', () => { 
+  pi.addEventListener('touchstart', () => {
     state.seeking = true;
     wasPlayingBeforeSeek = state.playing;
     if (state.playing) audio.pause();
   }, { passive: true });
-  
+
   pi.addEventListener('input', () => {
     if (audio.duration && isFinite(audio.duration)) {
       audio.currentTime = (pi.value / 1000) * audio.duration;
@@ -199,16 +284,18 @@ function bindPlayerControls() {
     // Update UI immediately while dragging/seeking, even when paused
     updateProgressUI();
   });
-  
-  pi.addEventListener('mouseup',  () => { 
+
+  pi.addEventListener('mouseup', () => {
     state.seeking = false;
+    resetSilenceDetection(); // posição mudou: reinicia contador de silêncio
     updateProgressUI(); // ensure UI is updated
-    if (wasPlayingBeforeSeek && audio.paused) audio.play().catch(() => {});
+    if (wasPlayingBeforeSeek && audio.paused) audio.play().catch(() => { });
   });
-  pi.addEventListener('touchend', () => { 
+  pi.addEventListener('touchend', () => {
     state.seeking = false;
+    resetSilenceDetection(); // posição mudou: reinicia contador de silêncio
     updateProgressUI(); // ensure UI is updated
-    if (wasPlayingBeforeSeek && audio.paused) audio.play().catch(() => {});
+    if (wasPlayingBeforeSeek && audio.paused) audio.play().catch(() => { });
   });
 
   // Volume
@@ -224,16 +311,16 @@ function bindPanelSettings() {
   // Seleciona todos os botões .pbtn que têm data-pl e data-key
   document.querySelectorAll('.pbtn[data-pl][data-key]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const pl  = btn.dataset.pl;
+      const pl = btn.dataset.pl;
       const key = btn.dataset.key;
       const cfg = state.settings[pl];
 
       // Regra de exclusividade:
       // repeatOne desliga repeat (e vice-versa)
       // shuffle desliga repeatOne
-      if (key === 'repeatOne' && !cfg.repeatOne) cfg.repeat    = false;
-      if (key === 'repeat'    && !cfg.repeat)    cfg.repeatOne = false;
-      if (key === 'shuffle'   && !cfg.shuffle)   cfg.repeatOne = false;
+      if (key === 'repeatOne' && !cfg.repeatOne) cfg.repeat = false;
+      if (key === 'repeat' && !cfg.repeat) cfg.repeatOne = false;
+      if (key === 'shuffle' && !cfg.shuffle) cfg.repeatOne = false;
 
       // Alterna o estado
       cfg[key] = !cfg[key];
@@ -241,8 +328,8 @@ function bindPanelSettings() {
       // Se autoNext foi desligado, desliga também shuffle e repeat/repeatOne
       // (não faz sentido shuffle sem autonext)
       if (key === 'autoNext' && !cfg.autoNext) {
-        cfg.shuffle   = false;
-        cfg.repeat    = false;
+        cfg.shuffle = false;
+        cfg.repeat = false;
         cfg.repeatOne = false;
       }
 
@@ -262,9 +349,9 @@ function updatePanelSettingsUI(pl) {
   const cfg = state.settings[pl];
   const keys = ['autoNext', 'shuffle', 'repeat', 'repeatOne'];
   const idMap = {
-    autoNext:  `ps-${pl}-autonext`,
-    shuffle:   `ps-${pl}-shuffle`,
-    repeat:    `ps-${pl}-repeat`,
+    autoNext: `ps-${pl}-autonext`,
+    shuffle: `ps-${pl}-shuffle`,
+    repeat: `ps-${pl}-repeat`,
     repeatOne: `ps-${pl}-repeatone`,
   };
   keys.forEach(key => {
@@ -276,10 +363,10 @@ function updatePanelSettingsUI(pl) {
 function showSettingsToast(pl, key, on) {
   const plLabel = pl === 'entrada' ? 'Entrada & Saída' : 'Fundo';
   const labels = {
-    autoNext:  on ? `[${plLabel}] Próxima automática ligada`  : `[${plLabel}] Próxima automática desligada`,
-    shuffle:   on ? `[${plLabel}] Aleatório ligado`           : `[${plLabel}] Aleatório desligado`,
-    repeat:    on ? `[${plLabel}] Repetir tudo ligado`        : `[${plLabel}] Repetir tudo desligado`,
-    repeatOne: on ? `[${plLabel}] Repetir uma música ligado`  : `[${plLabel}] Repetir uma música desligado`,
+    autoNext: on ? `[${plLabel}] Próxima automática ligada` : `[${plLabel}] Próxima automática desligada`,
+    shuffle: on ? `[${plLabel}] Aleatório ligado` : `[${plLabel}] Aleatório desligado`,
+    repeat: on ? `[${plLabel}] Repetir tudo ligado` : `[${plLabel}] Repetir tudo desligado`,
+    repeatOne: on ? `[${plLabel}] Repetir uma música ligado` : `[${plLabel}] Repetir uma música desligado`,
   };
   showToast(labels[key] || '');
 }
@@ -311,7 +398,7 @@ function bindKeyboard() {
 //  CARREGAR ARQUIVOS
 // ──────────────────────────────────────────────
 function loadFiles(pl, files) {
-  const all      = Array.from(files);
+  const all = Array.from(files);
   const accepted = all.filter(f =>
     f.type.startsWith('audio/') || AUDIO_EXTS.test(f.name)
   );
@@ -328,9 +415,9 @@ function loadFiles(pl, files) {
   accepted.forEach(f => {
     const track = {
       name: f.name.replace(/\.[^/.]+$/, ''),
-      url:  URL.createObjectURL(f),
-      dur:  null,
-      id:   uniqueId(),
+      url: URL.createObjectURL(f),
+      dur: null,
+      id: uniqueId(),
       repeat: false, // per-track repeat flag
       file: f,
     };
@@ -367,7 +454,7 @@ function preloadDurations(pl) {
 //  RENDERIZAR LISTA
 // ──────────────────────────────────────────────
 function renderList(pl) {
-  const el     = document.getElementById('list' + cap(pl));
+  const el = document.getElementById('list' + cap(pl));
   const tracks = state.playlists[pl];
   const isActive = state.active === pl;
 
@@ -384,7 +471,7 @@ function renderList(pl) {
 
   el.innerHTML = tracks.map((t, i) => {
     const isCurrent = isActive && state.idx === i;
-    const isPaused  = isCurrent && !state.playing;
+    const isPaused = isCurrent && !state.playing;
     const dur = t.dur !== null ? fmtTime(t.dur) : '—';
 
     // choose play icon based on current/playing
@@ -444,8 +531,15 @@ function playTrack(pl, i) {
     updatePanelSettingsUI('fundo');
   }
 
-  state.idx     = i;
+  state.idx = i;
   state.playing = true;
+
+  // Inicializa AudioContext no primeiro play (requer gesto do usuário)
+  initAudioContext();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+  // Reseta detecção de silêncio para a nova faixa
+  resetSilenceDetection();
 
   // always pause before switching source to avoid some browsers ignoring the new src
   audio.pause();
@@ -532,7 +626,7 @@ function nextTrack(forced = false) {
   // Repetir uma música (só quando não for forçado pelo botão)
   if (!forced && cfg.repeatOne) {
     audio.currentTime = 0;
-    audio.play().catch(() => {});
+    audio.play().catch(() => { });
     return;
   }
 
@@ -651,7 +745,7 @@ function clearPlaylist(pl) {
 }
 
 function moveTrack(fromPl, i, toPl) {
-  const track      = state.playlists[fromPl][i];
+  const track = state.playlists[fromPl][i];
   const wasCurrent = state.active === fromPl && state.idx === i;
 
   state.playlists[fromPl].splice(i, 1);
@@ -659,10 +753,10 @@ function moveTrack(fromPl, i, toPl) {
 
   if (wasCurrent) {
     state.active = toPl;
-    state.idx    = state.playlists[toPl].length - 1;
+    state.idx = state.playlists[toPl].length - 1;
     updatePanelHighlight();
     audio.src = track.url;
-    audio.play().catch(() => {});
+    audio.play().catch(() => { });
     updatePlayerUI();
   } else if (state.active === fromPl && state.idx > i) {
     state.idx--;
@@ -697,7 +791,7 @@ audio.addEventListener('ended', () => {
   const track = state.playlists[state.active]?.[state.idx];
   if (track?.repeat) {
     audio.currentTime = 0;
-    audio.play().catch(() => {});
+    audio.play().catch(() => { });
     return;
   }
 
@@ -730,6 +824,7 @@ audio.addEventListener('loadedmetadata', () => {
 audio.addEventListener('timeupdate', () => {
   if (!audio.duration || !isFinite(audio.duration)) return;
   updateProgressUI();
+  checkSilence();
 });
 
 audio.addEventListener('error', () => {
@@ -788,40 +883,40 @@ function toggleTheme() {
 function updateProgressUI() {
   if (!audio.duration || !isFinite(audio.duration)) return;
   const pct = audio.currentTime / audio.duration;
-  
+
   document.getElementById('progressFill').style.width = (pct * 100).toFixed(2) + '%';
   document.getElementById('progressThumb').style.left = (pct * 100).toFixed(2) + '%';
-  document.getElementById('progressInput').value      = Math.round(pct * 1000);
-  document.getElementById('timeNow').textContent      = fmtTime(audio.currentTime);
+  document.getElementById('progressInput').value = Math.round(pct * 1000);
+  document.getElementById('timeNow').textContent = fmtTime(audio.currentTime);
 }
 
 function updatePlayerUI() {
-  const track   = state.playlists[state.active][state.idx];
-  const nameEl  = document.getElementById('nowName');
-  const srcEl   = document.getElementById('nowSource');
+  const track = state.playlists[state.active][state.idx];
+  const nameEl = document.getElementById('nowName');
+  const srcEl = document.getElementById('nowSource');
   const playBtn = document.getElementById('btnPlay');
 
   if (track) {
     nameEl.textContent = track.name;
-    const total   = state.playlists[state.active].length;
+    const total = state.playlists[state.active].length;
     const plLabel = state.active === 'entrada' ? '🎊 Entrada &amp; Saída' : '🎶 Fundo';
     srcEl.innerHTML = `Playlist: <b>${plLabel}</b> &nbsp;·&nbsp; Faixa ${state.idx + 1} de ${total}`;
   } else {
     nameEl.innerHTML = '<em>Nenhuma música selecionada</em>';
-    srcEl.innerHTML  = 'Escolha uma playlist e clique em <b>Ativar</b>';
+    srcEl.innerHTML = 'Escolha uma playlist e clique em <b>Ativar</b>';
     document.getElementById('progressFill').style.width = '0%';
     document.getElementById('progressThumb').style.left = '0%';
-    document.getElementById('progressInput').value      = 0;
-    document.getElementById('timeNow').textContent      = '0:00';
-    document.getElementById('timeTotal').textContent    = '0:00';
+    document.getElementById('progressInput').value = 0;
+    document.getElementById('timeNow').textContent = '0:00';
+    document.getElementById('timeTotal').textContent = '0:00';
   }
 
   playBtn.textContent = state.playing ? '⏸' : '▶';
 
   // update left/right/player-aux buttons
   const btnEntrada = document.getElementById('btnEntrada');
-  const btnFundo   = document.getElementById('btnFundo');
-  const btnRepeat  = document.getElementById('btnRepeat');
+  const btnFundo = document.getElementById('btnFundo');
+  const btnRepeat = document.getElementById('btnRepeat');
   const btnRepeatOne = document.getElementById('btnRepeatOne');
 
   // highlight active playlist button
