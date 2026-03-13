@@ -97,13 +97,11 @@ function checkSilence() {
   if (fraction < silence.TAIL_FRACTION && remaining > silence.MIN_ABS_REMAIN) return;
 
   const cfg = state.settings[state.active];
-  // Só faz algo se autoNext (ou opções equivalentes) estiver ligado
-  if (!cfg.autoNext && !cfg.repeat && !cfg.repeatOne && !cfg.shuffle) return;
-  // repeatOne não precisa de detecção: o evento ended já reinicia
-  if (cfg.repeatOne) return;
-
   const track = state.playlists[state.active]?.[state.idx];
-  if (track?.repeat) return; // repetição por faixa: deixa o ended cuidar
+
+  // Só faz algo se autoNext (ou opções equivalentes) estiver ligado
+  // Permite passar se a faixa tem repeat individual (track.repeat) ou repeatOne da playlist
+  if (!cfg.autoNext && !cfg.repeat && !cfg.repeatOne && !cfg.shuffle && !track?.repeat) return;
 
   const rms = getRMS();
 
@@ -114,7 +112,14 @@ function checkSilence() {
       const elapsed = performance.now() - silence.silentSince;
       if (elapsed >= silence.MIN_DURATION) {
         silence.triggered = true;
-        nextTrack(false);
+        if (track?.repeat || cfg.repeatOne) {
+          // Repetição (faixa individual ou repeatOne da playlist): reinicia ao detectar silêncio
+          resetSilenceDetection();
+          audio.currentTime = 0;
+          audio.play().catch(() => { });
+        } else {
+          nextTrack(false);
+        }
       }
     }
   } else {
