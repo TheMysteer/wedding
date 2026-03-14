@@ -15,6 +15,12 @@ const state = {
     fundo: [],
   },
 
+  // Índices restantes para shuffle (para evitar repetições até tocar todas)
+  shuffleRemaining: {
+    entrada: [],
+    fundo: [],
+  },
+
   // Configurações independentes de cada painel
   // autoNext  → ao terminar, toca a próxima automaticamente
   // shuffle   → próxima é escolhida aleatoriamente
@@ -330,12 +336,23 @@ function bindPanelSettings() {
       // Alterna o estado
       cfg[key] = !cfg[key];
 
+      // Handle shuffle initialization
+      if (key === 'shuffle') {
+        if (cfg.shuffle) {
+          const len = state.playlists[pl].length;
+          state.shuffleRemaining[pl] = shuffleArray([...Array(len).keys()]);
+        } else {
+          state.shuffleRemaining[pl] = [];
+        }
+      }
+
       // Se autoNext foi desligado, desliga também shuffle e repeat/repeatOne
       // (não faz sentido shuffle sem autonext)
       if (key === 'autoNext' && !cfg.autoNext) {
         cfg.shuffle = false;
         cfg.repeat = false;
         cfg.repeatOne = false;
+        state.shuffleRemaining[pl] = []; // clear shuffle
       }
 
       // Se shuffle, repeat ou repeatOne foi ligado, liga autonext automaticamente
@@ -429,6 +446,11 @@ function loadFiles(pl, files) {
     state.playlists[pl].push(track);
     saveTrackToDB(track, pl);
   });
+
+  if (state.settings[pl].shuffle) {
+    const len = state.playlists[pl].length;
+    state.shuffleRemaining[pl] = shuffleArray([...Array(len).keys()]);
+  }
 
   renderList(pl);
   updateBadge(pl);
@@ -595,7 +617,18 @@ function activatePlaylist(pl) {
   if (!tracks.length) { showToast('Adicione músicas antes de ativar.'); return; }
 
   const cfg = state.settings[pl];
-  const startIdx = cfg.shuffle ? randomIdx(pl) : 0;
+  let startIdx;
+  if (cfg.shuffle) {
+    startIdx = getNextShuffleIdx(pl);
+    if (startIdx === null) {
+      // Initialize if empty
+      const len = tracks.length;
+      state.shuffleRemaining[pl] = shuffleArray([...Array(len).keys()]);
+      startIdx = state.shuffleRemaining[pl].shift();
+    }
+  } else {
+    startIdx = 0;
+  }
   playTrack(pl, startIdx);
 }
 
@@ -604,7 +637,18 @@ function togglePlay() {
     const tracks = state.playlists[state.active];
     if (tracks.length) {
       const cfg = state.settings[state.active];
-      playTrack(state.active, cfg.shuffle ? randomIdx(state.active) : 0);
+      let startIdx;
+      if (cfg.shuffle) {
+        startIdx = getNextShuffleIdx(state.active);
+        if (startIdx === null) {
+          const len = tracks.length;
+          state.shuffleRemaining[state.active] = shuffleArray([...Array(len).keys()]);
+          startIdx = state.shuffleRemaining[state.active].shift();
+        }
+      } else {
+        startIdx = 0;
+      }
+      playTrack(state.active, startIdx);
     } else {
       showToast('Adicione músicas e clique em Ativar.');
     }
@@ -638,8 +682,23 @@ function nextTrack(forced = false) {
   let next;
 
   if (cfg.shuffle) {
-    // Aleatório
-    next = randomIdx(state.active);
+    // Shuffle: play each song once before repeating
+    next = getNextShuffleIdx(state.active);
+    if (next === null) {
+      if (cfg.repeat) {
+        // Reshuffle and continue
+        const len = tracks.length;
+        state.shuffleRemaining[state.active] = shuffleArray([...Array(len).keys()]);
+        next = state.shuffleRemaining[state.active].shift();
+      } else {
+        // End of playlist
+        state.playing = false;
+        updatePlayerUI();
+        renderAll();
+        showToast('Fim da playlist.');
+        return;
+      }
+    }
   } else {
     next = state.idx + 1;
     if (next >= tracks.length) {
@@ -700,6 +759,11 @@ function removeTrack(pl, i) {
     state.idx--;
   }
 
+  if (state.settings[pl].shuffle) {
+    const len = state.playlists[pl].length;
+    state.shuffleRemaining[pl] = shuffleArray([...Array(len).keys()]);
+  }
+
   renderList(pl);
   updateBadge(pl);
 }
@@ -734,6 +798,7 @@ function clearPlaylist(pl) {
 
   state.playlists[pl].forEach(t => URL.revokeObjectURL(t.url));
   state.playlists[pl] = [];
+  state.shuffleRemaining[pl] = [];
   clearPlaylistDB(pl);
 
   if (state.active === pl) {
@@ -956,6 +1021,21 @@ function esc(str) {
 
 function cap(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function getNextShuffleIdx(pl) {
+  if (state.shuffleRemaining[pl].length === 0) {
+    return null;
+  }
+  return state.shuffleRemaining[pl].shift();
 }
 
 function randomIdx(pl) {
